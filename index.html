@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Visualización Logística Portuaria</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+<style>
+  /* Reset + base */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'Inter',sans-serif;
+    background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);
+    color:#e2e8f0;
+    overflow:hidden;
+  }
+
+  /* Layout */
+  .app-container{display:flex;height:100vh;position:relative}
+  .sidebar{
+    width:280px;background:linear-gradient(180deg,#065f46,#047857);
+    padding:20px 0;z-index:100;overflow-y:auto;box-shadow:4px 0 20px rgba(0,0,0,.3)
+  }
+  .sidebar-header{padding:0 20px 20px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:20px}
+  .sidebar-header h1{font-size:1.05rem;color:#fff;font-weight:600}
+  .menu-item{display:flex;align-items:center;padding:15px 20px;margin:5px 15px;border-radius:12px;cursor:pointer;color:rgba(255,255,255,.95)}
+  .menu-item i{width:24px;margin-right:12px}
+  .menu-item.active{background:rgba(255,255,255,.12)}
+  .menu-item:hover{background:rgba(255,255,255,.06)}
+
+  .main-content{flex:1;display:flex;flex-direction:column;height:100vh}
+  .content-area{flex:1;padding:30px;overflow-y:auto;position:relative}
+  .content-section{display:none;animation:fadeIn .4s ease}
+  .content-section.active{display:block}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+  /* Portada */
+  .portada{
+    height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:20px;
+    background: linear-gradient(rgba(15,23,42,.85),rgba(15,23,42,.85)), url('https://a0.cdnfan.com/images/M/6/4/4/2/ruta-en-barco-coche-chino-2_hd_159723.jpg');
+    background-size:cover;background-position:center;border-radius:12px;
+  }
+  .portada h1{font-size:2rem;font-weight:700;margin-bottom:12px;background:linear-gradient(45deg,#3b82f6,#10b981,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  .portada p{color:#cbd5e1;max-width:900px;line-height:1.6}
+
+  /* Generic card containers */
+  .container-card{
+    background:rgba(30,41,59,.7);border:1px solid rgba(100,116,139,.25);border-radius:12px;padding:20px;backdrop-filter:blur(8px)
+  }
+
+  /* Fase layouts */
+  .grid-2col{display:grid;grid-template-columns:2fr 1fr;gap:24px;height:100%}
+  .grid-full{display:block}
+
+  /* Fase 1 specifics */
+  .cards-list{display:flex;flex-direction:column;gap:16px;margin-top:16px}
+  .card{background:rgba(15,23,42,.7);border-radius:10px;padding:16px;border:1px solid rgba(100,116,139,.2)}
+  .card-header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .card-title{font-weight:600;color:#f1f5f9}
+
+  /* Video container (works both for iframe and <video>) */
+  .video-responsive{position:relative;padding-bottom:56.25%;height:0;border-radius:12px;overflow:hidden;background:#000}
+  .video-responsive > iframe, .video-responsive > video{position:absolute;top:0;left:0;width:100%;height:100%;display:block}
+
+  /* Fase 3 (clean) */
+  .fase3-container{display:grid;grid-template-columns:2fr 1fr;gap:24px;height:100%}
+  .simulation-area{background:rgba(30,41,59,.7);border-radius:12px;padding:20px;border:1px solid rgba(100,116,139,.25)}
+  .simulation-header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .simulation-header i{font-size:1.6rem;background:linear-gradient(45deg,#3b82f6,#10b981);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+
+  /* Info panel minimal (kept empty to preserve grid) */
+  .panel-empty{background:transparent;border-radius:8px;min-height:60px}
+
+  /* Fase 2 map area */
+  .map-area{background:rgba(30,41,59,.7);border-radius:12px;padding:12px;border:1px solid rgba(100,116,139,.25)}
+  #map{height:420px;border-radius:10px}
+
+  /* Fase 4 IA */
+  .ia-form{background:rgba(30,41,59,.7);border-radius:12px;padding:16px;border:1px solid rgba(100,116,139,.25)}
+
+  /* Quality banner */
+  .quality-banner{background:linear-gradient(90deg,#065f46,#047857);padding:12px;text-align:center;color:white;margin-top:10px;border-radius:6px}
+
+  /* Responsive */
+  @media(max-width:1024px){
+    .grid-2col,.fase3-container{grid-template-columns:1fr}
+    #map{min-height:300px}
+  }
+
+  @media(max-width:768px){
+    .sidebar{position:fixed;left:-280px;height:100vh}
+    .sidebar.active{left:0}
+    .mobile-menu-btn{display:block;position:fixed;top:20px;left:20px;z-index:1001}
+  }
+</style>
+</head>
+<body>
+  <button class="mobile-menu-btn" onclick="toggleSidebar()" style="display:none;background:linear-gradient(180deg,#065f46,#047857);color:white;border:none;padding:10px;border-radius:8px;z-index:1100">
+    <i class="fas fa-bars"></i>
+  </button>
+
+  <div class="app-container">
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header"><h1>Visualización Logística Portuaria</h1></div>
+      <div class="menu-item active" data-section="portada"><i class="fas fa-home"></i><span>Portada</span></div>
+      <div class="menu-item" data-section="fase1"><i class="fas fa-clipboard-check"></i><span>Fase 1 - Conceptos</span></div>
+      <div class="menu-item" data-section="fase2"><i class="fas fa-map-marked-alt"></i><span>Fase 2 - Mapa</span></div>
+      <div class="menu-item" data-section="fase3"><i class="fas fa-project-diagram"></i><span>Fase 3 - Simulación</span></div>
+      <div class="menu-item" data-section="fase4"><i class="fas fa-robot"></i><span>Fase 4 - IA</span></div>
+    </div>
+
+    <!-- Main content -->
+    <div class="main-content">
+      <div class="content-area">
+        <!-- Portada -->
+        <div class="content-section active" id="portada">
+          <div class="portada">
+            <h1>Visualización de rutas logísticas y operaciones portuarias</h1>
+            <p>Herramientas digitales para una logística portuaria eficiente, trazable y comprometida con la calidad.</p>
+          </div>
+        </div>
+
+        <!-- Fase 1 -->
+        <div class="content-section" id="fase1">
+          <div class="grid-2col" style="height:100%">
+            <div class="container-card">
+              <h2 style="margin-bottom:8px"><i class="fas fa-clipboard-check" style="margin-right:8px"></i>Fase 1 - Conceptos y Normas</h2>
+              <p style="color:#cbd5e1;line-height:1.6">
+                La logística portuaria abarca la recepción, almacenamiento, manipulación y despacho de mercancías.
+                El control de calidad (ISO) asegura procesos estandarizados y mejora continua.
+              </p>
+
+              <div style="margin-top:16px" class="video-responsive">
+                <iframe src="https://www.youtube.com/embed/Cow8OJ3ZzDU" frameborder="0" allowfullscreen></iframe>
+              </div>
+
+              <div class="cards-list">
+                <div class="card">
+                  <div class="card-header"><div class="card-title">Puerto</div></div>
+                  <p class="card-content" style="color:#94a3b8">Vista previa del Puerto de Guayaquil con grúas y contenedores.</p>
+                </div>
+                <div class="card">
+                  <div class="card-header"><div class="card-title">Normas de Calidad</div></div>
+                  <p class="card-content" style="color:#94a3b8">ISO 9001, ISO 14001, ISO 28000, ISO 45001.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="container-card">
+              <h3>Recursos</h3>
+              <p style="color:#cbd5e1">PDFs, imágenes y enlaces (simulados con botones).</p>
+              <button class="card-button" style="margin-top:10px;padding:10px;border-radius:8px;background:linear-gradient(45deg,#065f46,#047857);border:none;color:#fff">Ver recursos</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fase 2 - mapa -->
+        <div class="content-section" id="fase2">
+          <div class="fase2-full-container">
+            <div class="container-card" style="margin-bottom:12px">
+              <h2><i class="fas fa-map-marked-alt"></i> Rastreador de Rutas</h2>
+              <p style="color:#cbd5e1">Selecciona un producto y visualiza su ruta.</p>
+            </div>
+
+            <div class="grid-2col" style="height:auto">
+              <div class="container-card product-sidebar">
+                <h3>Productos de Exportación</h3>
+                <div id="productList"></div>
+              </div>
+
+              <div class="map-area">
+                <div id="map"></div>
+                <div id="routeInfo" style="display:none;margin-top:12px" class="route-info container-card"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fase 3 - SOLO VIDEO -->
+        <div class="content-section" id="fase3">
+          <div class="fase3-container">
+            <div class="simulation-area">
+              <div class="simulation-header">
+                <i class="fas fa-project-diagram"></i>
+                <h2>Simulación del Flujo de Contenedores</h2>
+              </div>
+
+              <div class="video-responsive" style="margin-top:12px">
+                <!-- video1.mp4 debe estar en la misma carpeta que el HTML en tu repo -->
+                <video controls>
+                  <source src="video1.mp4" type="video/mp4">
+                  Tu navegador no soporta reproducción de video.
+                </video>
+              </div>
+
+              <p style="color:#94a3b8;margin-top:10px">Si quieres autoplay o loop, dímelo y lo agrego.</p>
+            </div>
+
+            <!-- Panel derecho vacío para mantener el grid -->
+            <div class="panel-empty"></div>
+          </div>
+        </div>
+
+        <!-- Fase 4 - IA Predictiva -->
+        <div class="content-section" id="fase4">
+          <div class="fase4-container container-card">
+            <div class="ia-header" style="text-align:center;margin-bottom:12px">
+              <h2><i class="fas fa-robot"></i> Inteligencia Artificial Predictiva</h2>
+              <p style="color:#cbd5e1">Análisis inteligente de rutas logísticas</p>
+            </div>
+
+            <div class="ia-form">
+              <h3><i class="fas fa-search"></i> Generador de Rutas Inteligentes</h3>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <input id="producto-input" placeholder="Ingresa un producto (ej. cacao)" style="flex:1;padding:10px;border-radius:8px;background:rgba(15,23,42,.6);border:1px solid rgba(100,116,139,.12);color:#e2e8f0">
+                <button onclick="analizarRuta()" style="padding:10px 14px;border-radius:8px;background:linear-gradient(45deg,#3b82f6,#10b981);border:none;color:#fff">Analizar</button>
+              </div>
+            </div>
+
+            <div id="ia-results" style="display:none;margin-top:12px" class="container-card">
+              <h4>Resultados</h4>
+              <div style="display:grid;gap:8px;margin-top:8px">
+                <div><strong>Producto:</strong> <span id="resultado-producto">-</span></div>
+                <div><strong>Ruta:</strong> <span id="resultado-ruta">-</span></div>
+                <div><strong>Tiempo estimado:</strong> <span id="resultado-tiempo">-</span></div>
+                <div><strong>Emisiones CO₂:</strong> <span id="resultado-co2">-</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div style="padding:12px">
+        <div class="quality-banner">Comprometidos con la calidad (ISO 9001), la trazabilidad y la sostenibilidad en la logística portuaria.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script>
+    // Navegación entre secciones
+    function showSection(sectionId){
+      document.querySelectorAll('.content-section').forEach(s=>s.classList.remove('active'));
+      const el = document.getElementById(sectionId);
+      if(el) el.classList.add('active');
+
+      document.querySelectorAll('.menu-item').forEach(mi=>mi.classList.remove('active'));
+      const menu = document.querySelector('.menu-item[data-section="'+sectionId+'"]');
+      if(menu) menu.classList.add('active');
+
+      // init map when needed
+      if(sectionId==='fase2' && !window._mapInit){
+        setTimeout(initMap,80);
+      }
+    }
+
+    document.querySelectorAll('.menu-item').forEach(i=>{
+      i.addEventListener('click',()=> showSection(i.getAttribute('data-section')));
+    });
+
+    function toggleSidebar(){
+      document.getElementById('sidebar').classList.toggle('active');
+    }
+
+    /* ========== Fase 2 - Map (mantengo la lógica básica) ========== */
+    const products = [
+      { id:1, name:'Café Arábigo', origin:'Loja, Ecuador', originPort:'Puerto de Guayaquil, Ecuador', destPort:'Puerto de Long Beach, USA',
+        coords:{origin:[-4.0,-79.2], originPort:[-2.27,-79.9], destPort:[33.75,-118.19]},
+        seaRoute:[[-2.27,-79.9],[3,-116],[13,-117.5],[33.75,-118.19]]
+      },
+      { id:2, name:'Banano', origin:'El Oro, Ecuador', originPort:'Puerto Bolívar', destPort:'Puerto de Rotterdam',
+        coords:{origin:[-3.26,-79.96], originPort:[-3.27,-79.98], destPort:[51.95,4.14]},
+        seaRoute:[[-3.27,-79.98],[10,-77],[24,-47],[51.95,4.14]]
+      }
+      // puedes agregar más como antes...
+    ];
+
+    function renderProductList(){
+      const list = document.getElementById('productList');
+      list.innerHTML = products.map(p=>'<button class="product-btn" style="display:block;width:100%;margin:6px 0;padding:10px;border-radius:8px;background:rgba(15,23,42,.6);border:1px solid rgba(100,116,139,.12);color:#e2e8f0;text-align:left" onclick="selectProduct('+p.id+')"><strong>'+p.name+'</strong><div style="font-size:12px;color:#94a3b8">'+p.origin+'</div></button>').join('');
+    }
+
+    let map, markers=[], polylines=[];
+    function initMap(){
+      if(map) return;
+      window._mapInit = true;
+      map = L.map('map').setView([-2.5,-78.5],3);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'OpenStreetMap'}).addTo(map);
+      renderProductList();
+    }
+
+    function clearMap(){
+      markers.forEach(m=>map.removeLayer(m));
+      polylines.forEach(l=>map.removeLayer(l));
+      markers=[];polylines=[];
+    }
+
+    function selectProduct(id){
+      const p = products.find(x=>x.id===id);
+      if(!p) return;
+      clearMap();
+      const greenIcon = L.icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', iconSize:[25,41],iconAnchor:[12,41]});
+      const blueIcon = L.icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png', iconSize:[25,41],iconAnchor:[12,41]});
+      const redIcon = L.icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png', iconSize:[25,41],iconAnchor:[12,41]});
+
+      markers.push(L.marker(p.coords.origin, {icon:greenIcon}).addTo(map).bindPopup('<b>Zona producción</b><br>'+p.origin));
+      markers.push(L.marker(p.coords.originPort, {icon:blueIcon}).addTo(map).bindPopup('<b>Puerto origen</b><br>'+p.originPort));
+      markers.push(L.marker(p.coords.destPort, {icon:redIcon}).addTo(map).bindPopup('<b>Puerto destino</b><br>'+p.destPort));
+
+      const poly = L.polyline(p.seaRoute, {color:'#ef4444', weight:4, opacity:.85}).addTo(map);
+      polylines.push(poly);
+
+      // fit bounds
+      const all = [p.coords.origin, p.coords.originPort, p.coords.destPort].concat(p.seaRoute);
+      map.fitBounds(all, {padding:[40,40]});
+
+      // show summary
+      const info = document.getElementById('routeInfo');
+      if(info){
+        info.style.display='block';
+        info.innerHTML = '<h4 style="margin-bottom:8px"><i class="fas fa-route"></i> Detalles de la Ruta</h4>'+
+          '<div style="color:#cbd5e1"><strong>Origen:</strong> '+p.origin+'<br><strong>Puerto origen:</strong> '+p.originPort+'<br><strong>Puerto destino:</strong> '+p.destPort+'</div>';
+      }
+    }
+
+    /* ========== Fase 4 - IA (simple) ========== */
+    function analizarRuta(){
+      const producto = document.getElementById('producto-input').value || 'Cacao';
+      document.getElementById('resultado-producto').textContent = producto;
+      document.getElementById('resultado-ruta').textContent = 'Guayaquil → Rotterdam';
+      document.getElementById('resultado-tiempo').textContent = '28 días';
+      document.getElementById('resultado-co2').textContent = '12.4 toneladas';
+      document.getElementById('ia-results').style.display = 'block';
+      document.getElementById('ia-results').scrollIntoView({behavior:'smooth'});
+    }
+
+    /* Inicialización ligera al cargar */
+    document.addEventListener('DOMContentLoaded', function(){
+      // attach menu behavior already set
+    });
+  </script>
+</body>
+</html>
